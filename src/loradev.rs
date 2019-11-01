@@ -58,7 +58,7 @@ impl TryFrom<&str> for RxPacket {
         } else {
             item
         };
-        let fields: Vec<&str> = dbg!(item_payload.trim()).split(',').collect();
+        let fields: Vec<&str> = item_payload.trim().split(',').collect();
         if fields.len() != 4 {
             return Err("+RX output from modem has unexpected length!");
         }
