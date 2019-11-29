@@ -1,5 +1,5 @@
-use rf95modem::{dump_all_serial_ports, RF95modem, get_default_usb_serial};
-use rf95modem::loradev::RF95LoraDevice;
+use lora_modem_hal::LoraModemDevice;
+use rf95modem::{dump_all_serial_ports, get_default_usb_serial, RF95modem};
 
 fn main() {
     let device = get_default_usb_serial();

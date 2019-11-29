@@ -11,8 +11,10 @@ keywords = ["lora", "serial", "rf95"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-cursive = "0.12.0"
+cursive = "0.13.0"
 lazy_static = "1.4"
 
 [dependencies]
 serialport = "3.3.0"
+lora-modem-hal = { git = "https://github.com/gh0st42/lora-modem-hal"}
+anyhow = "1.0.23"

@@ -12,8 +12,8 @@ use std::thread;
 use cursive::view::ScrollStrategy;
 use cursive::views::{BoxView, Dialog, DummyView, EditView, LinearLayout, ScrollView, TextView};
 
+use lora_modem_hal::LoraModemDevice;
 use rf95modem::{get_default_usb_serial, RF95modem};
-use rf95modem::loradev::RF95LoraDevice;
 
 #[macro_use]
 extern crate lazy_static;

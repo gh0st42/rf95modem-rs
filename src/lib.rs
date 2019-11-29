@@ -1,15 +1,15 @@
 use core::convert::TryFrom;
 use std::convert::TryInto;
 use std::io::BufReader;
-use std::io::{self, BufRead, Write};
+use std::io::{BufRead, Write};
 use std::time::Duration;
 
 use serialport::prelude::*;
 use serialport::SerialPortType;
 
-pub mod loradev;
+use anyhow::{anyhow, Error, Result};
 
-use loradev::{LoRaChannels, RF95LoraDevice, RxPacket, Status, ModemConfig};
+use lora_modem_hal::{LoRaChannels, LoraModemDevice, ModemConfig, RxPacket, Status};
 
 // Convert byte slice into a hex string
 fn hexify(buf: &[u8]) -> String {
@@ -27,7 +27,6 @@ fn unhexify(s: &str) -> Result<Vec<u8>, core::num::ParseIntError> {
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
         .collect()
 }
-
 
 #[derive(Default)]
 pub struct RF95modem {
@@ -56,9 +55,9 @@ impl Clone for RF95modem {
         }
     }
 }
-impl RF95LoraDevice for RF95modem {
+impl LoraModemDevice for RF95modem {
     /// Explicitly open serial device.
-    fn open(&mut self) -> Result<(), serialport::Error> {
+    fn open(&mut self) -> Result<()> {
         self.serial_fd = Some(serialport::open_with_settings(
             &self.device,
             &self.settings,
@@ -67,7 +66,7 @@ impl RF95LoraDevice for RF95modem {
     }
     /// Get current configuration of modem firmware.
     /// Device must be opened first!
-    fn config(&mut self) -> Result<Status, serialport::Error> {
+    fn config(&mut self) -> Result<Status> {
         if self.serial_fd.is_none() {
             self.open()?;
         }
@@ -108,7 +107,7 @@ impl RF95LoraDevice for RF95modem {
     /// Set frequency on rf95modem.
     ///
     /// Device must be opened first!
-    fn set_frequency(&mut self, freq: f32) -> Result<(), serialport::Error> {
+    fn set_frequency(&mut self, freq: f32) -> Result<()> {
         if self.serial_fd.is_none() {
             self.open()?;
         }
@@ -124,7 +123,7 @@ impl RF95LoraDevice for RF95modem {
     /// Set config mode on rf95modem.
     ///
     /// Device must be opened first!
-    fn set_mode(&mut self, mode: ModemConfig) -> Result<(), serialport::Error> {
+    fn set_mode(&mut self, mode: ModemConfig) -> Result<()> {
         if self.serial_fd.is_none() {
             self.open()?;
         }
@@ -138,7 +137,7 @@ impl RF95LoraDevice for RF95modem {
         }
     }
     /// Send data via configured serial device.
-    fn send_data(&mut self, data: Vec<u8>) -> Result<usize, serialport::Error> {
+    fn send_data(&mut self, data: Vec<u8>) -> Result<usize> {
         if self.serial_fd.is_none() {
             self.open()?;
         }
@@ -151,36 +150,23 @@ impl RF95LoraDevice for RF95modem {
             if bytes_sent == data.len() {
                 Ok(bytes_sent)
             } else {
-                Err(serialport::Error::new(
-                    serialport::ErrorKind::InvalidInput,
-                    "Number of bytes sent not matching input length.".to_string(),
-                ))
+                Err(anyhow!("Number of bytes sent not matching input length."))
             }
         } else {
-            Err(serialport::Error::new(
-                serialport::ErrorKind::InvalidInput,
-                "Unexpected response from modem while sending.".to_string(),
-            ))
+            Err(anyhow!("Unexpected response from modem while sending."))
         }
     }
 
     /// Read a packet from the modem.
-    fn read_packet(&mut self) -> Result<RxPacket, serialport::Error> {
+    fn read_packet(&mut self) -> Result<RxPacket> {
         let input_line = self.expect("+RX ")?;
 
-        if let Ok(rxp) = RxPacket::try_from(input_line.as_str()) {
-            Ok(rxp)
-        } else {
-            Err(serialport::Error::new(
-                serialport::ErrorKind::InvalidInput,
-                "Error decoding packet.",
-            ))
-        }
+        RxPacket::try_from(input_line.as_str())
     }
     /// Read a raw line from the serial device.
     ///
     /// **This method will probably made private in the future.**
-    fn read_line(&mut self) -> Result<String, serialport::Error> {
+    fn read_line(&mut self) -> Result<String> {
         if self.serial_fd.is_none() {
             self.open()?;
         }
@@ -192,14 +178,7 @@ impl RF95LoraDevice for RF95modem {
         let mut serial_str = String::new();
         match self.reader.as_mut().unwrap().read_line(&mut serial_str) {
             Ok(_) => Ok(serial_str),
-            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => Err(serialport::Error::new(
-                serialport::ErrorKind::Io(io::ErrorKind::TimedOut),
-                "Read timeout",
-            )),
-            Err(ref e) => Err(serialport::Error::new(
-                serialport::ErrorKind::Io(e.kind()),
-                format!("{:?}", e),
-            )),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -220,15 +199,12 @@ impl RF95modem {
             reader: None,
         }
     }
-    fn expect(&mut self, starts_with: &str) -> Result<String, serialport::Error> {
+    fn expect(&mut self, starts_with: &str) -> Result<String> {
         let result = self.read_line()?;
         if result.starts_with(starts_with) {
             Ok(result)
         } else {
-            Err(serialport::Error::new(
-                serialport::ErrorKind::InvalidInput,
-                "Unexpected result from modem.".to_string(),
-            ))
+            Err(anyhow!("Unexpected result from modem."))
         }
     }
     fn match_split(&self, input: &str, key: &str) -> Option<String> {
@@ -243,14 +219,8 @@ impl RF95modem {
     /// Device must be opened first!
     ///
     /// **This method will probably made private in the future.**
-    pub fn raw_write(&mut self, buf: &str) -> Result<(), serialport::Error> {
-        match self.serial_fd.as_mut().unwrap().write_all(buf.as_bytes()) {
-            Ok(()) => Ok(()),
-            Err(e) => Err(serialport::Error::new(
-                serialport::ErrorKind::Io(e.kind()),
-                format!("{:?}", e),
-            )),
-        }
+    pub fn raw_write(&mut self, buf: &str) -> Result<()> {
+        Ok(self.serial_fd.as_mut().unwrap().write_all(buf.as_bytes())?)
     }
 }
 
@@ -306,13 +276,5 @@ pub fn dump_all_serial_ports() {
         }
     } else {
         print!("Error listing serial ports");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }
