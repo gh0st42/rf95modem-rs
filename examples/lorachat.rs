@@ -55,9 +55,10 @@ fn main() {
             loop {
                 if let Ok(pkt) = MODEM.lock().unwrap().read_packet() {
                     let data = std::str::from_utf8(&pkt.data).unwrap();
-                    if data.contains('|') {
+                    if data.contains('|') && data.starts_with(&channel_name) {
                         let fields: Vec<&str> = data.split('|').collect();
                         if fields[0] == channel_name {
+                            // duplicate check
                             msg_sender.send(fields[1..].join("|")).unwrap();
                         }
                     }
@@ -204,7 +205,7 @@ fn main() {
 }
 
 fn publish(text: String, username: String, channel: String) {
-    let message = format!("{}|{}|{}", channel, username, text);
+    let message = format!("{}|{}||{}", channel, username, text);
     let out_sender = OUTGOING.0.lock().unwrap().clone();
     out_sender.send(message).unwrap();
 }
